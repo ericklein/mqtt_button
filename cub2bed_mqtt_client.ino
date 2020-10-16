@@ -64,7 +64,7 @@ enum { BTN_NOPRESS = 0, BTN_SHORTPRESS, BTN_LONGPRESS };
 
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
-Adafruit_MQTT_Client mqtt(&client, MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASS);
+Adafruit_MQTT_Client mqtt(&client, MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS);
 #ifdef ADAFRUITIO
   Adafruit_MQTT_Publish statusLightPub = Adafruit_MQTT_Publish(&mqtt, MQTT_USER "/feeds/status-light");
   Adafruit_MQTT_Publish cub2bedPub = Adafruit_MQTT_Subscribe(&mqtt, MQTT_USER "/feeds/XXX");
@@ -186,10 +186,16 @@ void loop()
   if (waitingForServerAction)
   {
     Adafruit_MQTT_Subscribe *subscription;
-    while ((subscription = mqtt.readSubscription(5000))) 
+    while ((subscription = mqtt.readSubscription(1000))) 
     {
       if (subscription == &cub2bedSub)
       {
+        #ifdef DEBUG
+          Serial.print("Received: ");
+          Serial.print((char *)cub2bedSub.lastread);
+          Serial.print(" from: ");
+          Serial.println(MQTT_SUB_TOPIC);
+        #endif
         if (strcmp((char *)cub2bedSub.lastread, "ontheway") == 0)
         {
           // visually indicate that request was successful
@@ -219,6 +225,7 @@ void loop()
           #ifdef DEBUG
             Serial.println("On the way message processed");
           #endif
+          waitingForServerAction = false;  
         }
         if (strcmp((char *)cub2bedSub.lastread, "needtowork") == 0) 
         {
@@ -248,12 +255,20 @@ void loop()
           #ifdef DEBUG
             Serial.println("Need to work message processed");
           #endif
+          waitingForServerAction = false;
         }
-      waitingForServerAction = false;  
       }
     }
   }
   resolveButtons();
+  // ping the broker to keep the mqtt connection alive
+  if(! mqtt.ping()) 
+  {
+    #ifdef DEBUG
+      Serial.println("We are disconnecting because MQTT ping failed");
+    #endif
+    mqtt.disconnect();
+  }
 }
 
 void resolveButtons()
@@ -283,7 +298,7 @@ void resolveButtons()
         }
         // Send message to cub2bed
         #ifdef DEBUG
-          Serial.print("sub2bed sent via MQTT publish to: ");
+          Serial.print("cub2bed sent via MQTT publish to: ");
           Serial.print(MQTT_PUB_TOPIC2);
         #endif
         if (!cub2bedPub.publish("cub2bed"))
@@ -332,7 +347,8 @@ void MQTT_connect()
     return;
   }
   #ifdef DEBUG
-    Serial.println("connecting to MQTT broker");
+    Serial.print("connecting to MQTT broker: ");
+    Serial.println(MQTT_BROKER);
   #endif
 
   uint8_t ret;
@@ -341,14 +357,13 @@ void MQTT_connect()
   {
     #ifdef DEBUG
       Serial.println(mqtt.connectErrorString(ret));
-      Serial.println("retrying MQTT connection in 5 seconds");
+      Serial.println("retrying MQTT connection in 3 seconds");
     #endif
     mqtt.disconnect();
-    delay(5000);  // wait 5 seconds
+    delay(3000);
     retries--;
     if (retries == 0) 
     {
-      // basically die and wait for WDT to reset me
       while (1);
     }
   }
