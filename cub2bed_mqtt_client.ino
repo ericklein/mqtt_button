@@ -7,14 +7,18 @@
 */
 
 // Conditionals (hardware functionality)
-#define DEBUG         // Output to the serial port
-#define LED           // output to button LED
+//#define DEBUG       // Output to the serial port
+#define BUTTON_LED    // output to button LED
 //#define NEOPIXEL    // output to neopixel(s)
-//#define RJ45    // use Ethernet to send data to cloud services
-#define WIFI      // use WiFi to send data to cloud services
-//#define ADAFRUITIO
+//#define RJ45        // use Ethernet to send data to cloud services
+#define WIFI          // use WiFi to send data to cloud services
 
+// Gloval variables
+unsigned long previousMQTTPingTime = 0;
 bool waitingForServerAction = false;
+
+// for future use with DEBUG
+#define onboardLED 2
 
 //button
 #include <buttonhandler.h>
@@ -24,8 +28,8 @@ ButtonHandler buttonSendMessage(sendMessageButtonPin,longButtonPressDelay);
 // globals related to buttons
 enum { BTN_NOPRESS = 0, BTN_SHORTPRESS, BTN_LONGPRESS };
 
-#ifdef LED
-  #define ledPin  2
+#ifdef BUTTON_LED
+  #define buttonLEDPin  16
 #endif
 
 #ifdef NEOPIXEL
@@ -48,9 +52,7 @@ enum { BTN_NOPRESS = 0, BTN_SHORTPRESS, BTN_LONGPRESS };
   #endif
 
   WiFiClient client;
-
-  //use WiFiClientSecure for SSL
-  //WiFiClientSecure client;
+  //WiFiClientSecure client; // for SSL
 #endif
 
 #ifdef RJ45
@@ -58,22 +60,15 @@ enum { BTN_NOPRESS = 0, BTN_SHORTPRESS, BTN_LONGPRESS };
   byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
   #include <SPI.h>
   #include <Ethernet.h>
-  //#include <EthernetClient.h>  // Adafruit says required, not so in my experience?
   EthernetClient client;
 #endif
 
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 Adafruit_MQTT_Client mqtt(&client, MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS);
-#ifdef ADAFRUITIO
-  Adafruit_MQTT_Publish statusLightPub = Adafruit_MQTT_Publish(&mqtt, MQTT_USER "/feeds/status-light");
-  Adafruit_MQTT_Publish cub2bedPub = Adafruit_MQTT_Subscribe(&mqtt, MQTT_USER "/feeds/XXX");
-  Adafruit_MQTT_Subscribe cub2bedSub = Adafruit_MQTT_Subscribe(&mqtt, MQTT_USER "/feeds/XXX");
-#else
-  Adafruit_MQTT_Publish statusLightPub = Adafruit_MQTT_Publish(&mqtt, MQTT_PUB_TOPIC1);
-  Adafruit_MQTT_Publish cub2bedPub = Adafruit_MQTT_Publish(&mqtt, MQTT_PUB_TOPIC2);
-  Adafruit_MQTT_Subscribe cub2bedSub = Adafruit_MQTT_Subscribe(&mqtt, MQTT_SUB_TOPIC);
-#endif
+Adafruit_MQTT_Publish statusLightPub = Adafruit_MQTT_Publish(&mqtt, MQTT_PUB_TOPIC1);
+Adafruit_MQTT_Publish cub2bedPub = Adafruit_MQTT_Publish(&mqtt, MQTT_PUB_TOPIC2);
+Adafruit_MQTT_Subscribe cub2bedSub = Adafruit_MQTT_Subscribe(&mqtt, MQTT_SUB_TOPIC);
 
 void setup() 
 {
@@ -84,34 +79,71 @@ void setup()
         // wait for serial port
       }
       Serial.println("cub2bed client started");
-      #ifdef LED
+      #ifdef BUTTON_LED
         Serial.print("LED");
       #endif
       #ifdef NEOPIXEL
         Serial.print("NEOPIXEL");
       #endif
       Serial.println(" code path(s) enabled");
+      // Use the built-in blue LED for debug info
+      pinMode(onboardLED, OUTPUT);
+      digitalWrite(onboardLED, LOW);
   #endif
 
   #ifdef WIFI
-    // Connect to WiFi access point.
+    uint8_t tries = 1;
+    #define MAXTRIES 11
+
+    // Connect to WiFi access point
     #ifdef DEBUG
-      Serial.print("connecting to ");
+      Serial.print("Connecting to WiFI AP ");
       Serial.println(WIFI_SSID);
     #endif
 
+    // hostname has to come before WiFi.begin
+    WiFi.hostname(MQTT_CLIENT_ID);
+    // WiFi.setHostname(MQTT_CLIENT_ID); //for WiFiNINA
+
     WiFi.begin(WIFI_SSID, WIFI_PASS);
+
     while (WiFi.status() != WL_CONNECTED) 
     {
+      // Error handler - WiFi does not initially connect
       #ifdef DEBUG
-        Serial.print(".");
+        Serial.print("WiFi AP connect attempt ");
+        Serial.print(tries);
+        Serial.print("of");
+        Serial.print(MAXTRIES);
+        Serial.print(" in ");
+        Serial.print(tries*10);
+        Serial.println(" seconds");
       #endif
-      delay(500);
+      // use of delay OK as this is initialization code
+      delay(tries*10000);
+      tries++;
+      if (tries == MAXTRIES)
+      {
+        #ifdef DEBUG
+          Serial.print("FATAL error; can not connect to WiFi after");
+          Serial.print(MAXTRIES);
+          Serial.println(" attempts");
+        #endif
+        while (1)
+        {
+          // endless loop communicating fatal error
+          #ifdef BUTTON_LED
+            digitalWrite(buttonLEDPin, HIGH);
+            delay(1000);
+            digitalWrite(buttonLEDPin, LOW);
+            delay(1000);
+          #endif
+        }
+      }
     }
-
     #ifdef DEBUG
       Serial.println();  // finishes the status dots print
-      Serial.print("WiFi connected, IP address: ");
+      Serial.print("WiFi IP address is: ");
       Serial.println(WiFi.localIP());
     #endif
   #endif
@@ -128,10 +160,11 @@ void setup()
     // Initialize Ethernet and UDP
     if (Ethernet.begin(mac) == 0)
     {
+      // Error handler - Ethernet does not initialize
+      // generic error
       #ifdef DEBUG
-        Serial.println("Failed to configure Ethernet using DHCP");
+        Serial.println("FATAL error; Failed to configure Ethernet using DHCP");
       #endif
-      // Check for Ethernet hardware present
       if (Ethernet.hardwareStatus() == EthernetNoHardware)
       {
         #ifdef DEBUG
@@ -141,13 +174,22 @@ void setup()
       else if (Ethernet.linkStatus() == LinkOFF) 
       {
         #ifdef DEBUG
-          Serial.println("Ethernet cable is not connected.");
+          Serial.println("Ethernet cable is not connected");
         #endif
       }
-      while (1);
+      while (1)
+      {
+        // endless loop communicating fatal error
+        #ifdef BUTTON_LED
+          digitalWrite(buttonLEDPin, HIGH);
+          delay(1000);
+          digitalWrite(buttonLEDPin, LOW);
+          delay(1000;)
+        #endif
+      }
     }
     #ifdef DEBUG
-      Serial.print("IP number assigned by DHCP is ");
+      Serial.print("Ethernet IP address is: ");
       Serial.println(Ethernet.localIP());
     #endif
   #endif
@@ -157,16 +199,16 @@ void setup()
   // Setup push button
   buttonSendMessage.init();
 
-  #ifdef LED
-    pinMode(ledPin, OUTPUT);
-    digitalWrite(ledPin, LOW);
+  #ifdef BUTTON_LED
+    pinMode(buttonLEDPin, OUTPUT);
+    digitalWrite(buttonLEDPin, LOW);
     // visually validate correct wiring
     #ifdef DEBUG
       for (int i=0;i<9;i++)
       {
-        digitalWrite(ledPin,HIGH);
+        digitalWrite(buttonLEDPin,HIGH);
         delay(250);
-        digitalWrite(ledPin,LOW);
+        digitalWrite(buttonLEDPin,LOW);
       }
     #endif
   #endif
@@ -182,6 +224,7 @@ void setup()
 void loop() 
 {
   MQTT_connect();
+
   // if we're waiting for the second message
   if (waitingForServerAction)
   {
@@ -199,12 +242,12 @@ void loop()
         if (strcmp((char *)cub2bedSub.lastread, "ontheway") == 0)
         {
           // visually indicate that request was successful
-          #ifdef LED
+          #ifdef BUTTON_LED
             for(int i=0;i<3;i++)
             {
-              digitalWrite(ledPin, HIGH);
+              digitalWrite(buttonLEDPin, HIGH);
               delay(500);
-              digitalWrite(ledPin, LOW);
+              digitalWrite(buttonLEDPin, LOW);
               delay(500);   
             }
           #endif
@@ -223,18 +266,18 @@ void loop()
             strip.show();
           #endif
           #ifdef DEBUG
-            Serial.println("On the way message processed");
+            Serial.println("on the way message processed");
           #endif
           waitingForServerAction = false;  
         }
         if (strcmp((char *)cub2bedSub.lastread, "needtowork") == 0) 
         {
-          #ifdef LED
+          #ifdef BUTTON_LED
             for(int i=0;i<10;i++)
             {
-              digitalWrite(ledPin, HIGH);
+              digitalWrite(buttonLEDPin, HIGH);
               delay(150);
-              digitalWrite(ledPin, LOW);
+              digitalWrite(buttonLEDPin, LOW);
               delay(150);   
             }
           #endif
@@ -253,7 +296,7 @@ void loop()
             strip.show();
           #endif
           #ifdef DEBUG
-            Serial.println("Need to work message processed");
+            Serial.println("need to work message processed");
           #endif
           waitingForServerAction = false;
         }
@@ -261,13 +304,20 @@ void loop()
     }
   }
   resolveButtons();
-  // ping the broker to keep the mqtt connection alive
-  if(! mqtt.ping()) 
+  // ping the broker to keep the connection alive
+  if((millis() - previousMQTTPingTime) > MQTT_KEEP_ALIVE * 1000)
   {
+    previousMQTTPingTime = millis();   
+    if(! mqtt.ping())
+    {
+      mqtt.disconnect();
+      #ifdef DEBUG
+        Serial.println("disconnected from broker because ping says no connection");
+      #endif
+    }
     #ifdef DEBUG
-      Serial.println("We are disconnecting because MQTT ping failed");
+      Serial.println("pinged the broker to maintain connection");
     #endif
-    mqtt.disconnect();
   }
 }
 
@@ -313,8 +363,8 @@ void resolveButtons()
             Serial.println(" successful");
           #endif
         }
-        #ifdef LED
-          digitalWrite(ledPin,HIGH);
+        #ifdef BUTTON_LED
+          digitalWrite(buttonLEDPin,HIGH);
         #endif
         #ifdef NEOPIXEL
           strip.setPixelColor(0, 255, 255, 0); // yellow
@@ -341,33 +391,56 @@ void resolveButtons()
 void MQTT_connect()
 // Connects and reconnects to MQTT broker, call from loop() to maintain connection
 {
-  // Stop if already connected
+  uint8_t mqttErr;
+  uint8_t tries = 1;
+  #define MAXTRIES 3
+
+  // exit if already connected
   if (mqtt.connected()) 
   {
     return;
   }
   #ifdef DEBUG
-    Serial.print("connecting to MQTT broker: ");
+    Serial.print("connecting to broker: ");
     Serial.println(MQTT_BROKER);
   #endif
 
-  uint8_t ret;
-  uint8_t retries = 3;
   while (mqtt.connect() != 0)
   {
+    // Error handler - can not connect to MQTT broker
     #ifdef DEBUG
-      Serial.println(mqtt.connectErrorString(ret));
-      Serial.println("retrying MQTT connection in 3 seconds");
+      Serial.println(mqtt.connectErrorString(mqttErr));
+      Serial.print("MQTT broker connect attempt ");
+      Serial.print(tries);
+      Serial.print("of");
+      Serial.print(MAXTRIES);
+      Serial.print(" in ");
+      Serial.print(tries*10);
+      Serial.println(" seconds");
     #endif
     mqtt.disconnect();
-    delay(3000);
-    retries--;
-    if (retries == 0) 
+    delay(tries*10000);
+    tries++;
+    if (tries == MAXTRIES)
     {
-      while (1);
+      #ifdef DEBUG
+        Serial.print("FATAL error; can not connect to MQTT broker after");
+        Serial.print(MAXTRIES);
+        Serial.println(" attempts");
+      #endif
+      while (1)
+      {
+        // endless loop communicating fatal error
+        #ifdef BUTTON_LED
+          digitalWrite(buttonLEDPin, HIGH);
+          delay(1000);
+          digitalWrite(buttonLEDPin, LOW);
+          delay(1000);
+        #endif
+      }
     }
   }
   #ifdef DEBUG
-    Serial.println("connected to MQTT broker");
+    Serial.println("reconnected to MQTT broker");
   #endif
 }
