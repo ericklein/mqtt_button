@@ -20,6 +20,13 @@ First user alerts the second user to come2bed via status-light, and the second u
 - button LED on pin 16
 - GND to button input, LED
 
+### Error codes
+- FATAL
+	- Always throws a DEBUG message and blinks built-in LED at (error code x 1 second) intervals
+	- ERR 01: Can not connect to MQTT broker. Device must be restarted.
+	- ERR 02: Can not connect to Ethernet. Device must be restarted.
+	- ERR 03: Can not connect to WiFi. Device must be restarted.
+
 ### Information Sources
 
 ### Issues
@@ -32,7 +39,10 @@ First user alerts the second user to come2bed via status-light, and the second u
 - [P1]122320: Client appears to light the button every 10 seconds for less than 1 second
 
 ### Feature Requests
-- [P3]101220: MQTT QoS 1
+- [P3]101220: MQTT- [P3]110920: publish to secondary MQTT broker
+- [P3]111020: publish to multiple MQTT brokers
+- [P2]111120: ThinkSpeak investigation
+- [P3]120620: Error messages to MQTT broker
 
 ### Questions
 
@@ -57,3 +67,5 @@ First user alerts the second user to come2bed via status-light, and the second u
 	- [FR]111020 [P3]; combine MQTT publish code blocks for AdafruitIO MQTT and generic MQTT -> complete
 	- [I]101220 [P3]; AdafruitIO feeds not setup properly, see Publish setup code -> closed because of MQTT code merge
 	- [I]102420 [P1]; Need an error indicator for for non-DEBUG, while(1) errors, MQTT connection errors -> while(1) error handling improved and now blinks button LED in unique pattern to indicate fatal error
+- 012421
+	- [FR]123120 [P2]: Add error blink codes to onboard LED for while (1) -> Adding BUILT_IN_LED blinking matching the fatal error code, aligning with new code in air_quality

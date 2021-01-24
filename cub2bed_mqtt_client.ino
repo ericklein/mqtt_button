@@ -72,6 +72,9 @@ Adafruit_MQTT_Subscribe cub2bedSub = Adafruit_MQTT_Subscribe(&mqtt, MQTT_SUB_TOP
 
 void setup() 
 {
+  // used for fatal error messaging
+  pinMode(LED_BUILTIN, OUTPUT);
+
   #ifdef DEBUG
     Serial.begin(115200);
     while (!Serial) 
@@ -104,7 +107,6 @@ void setup()
     // hostname has to come before WiFi.begin
     WiFi.hostname(MQTT_CLIENT_ID);
     // WiFi.setHostname(MQTT_CLIENT_ID); //for WiFiNINA
-
     WiFi.begin(WIFI_SSID, WIFI_PASS);
 
     while (WiFi.status() != WL_CONNECTED) 
@@ -119,25 +121,31 @@ void setup()
         Serial.print(tries*10);
         Serial.println(" seconds");
       #endif
-      // use of delay OK as this is initialization code
-      delay(tries*10000);
+      delay(tries*10000); // using delay because this is not loop()
+
       tries++;
+
+      // FATAL ERROR 03 - WiFi doesn't connect
       if (tries == MAXTRIES)
       {
         #ifdef DEBUG
-          Serial.print("FATAL error; can not connect to WiFi after");
+          Serial.print("FATAL ERROR 03; can not connect to WiFi after ");
           Serial.print(MAXTRIES);
           Serial.println(" attempts");
         #endif
         while (1)
         {
-          // endless loop communicating fatal error
+          // endless loop communicating fatal error 03
           #ifdef BUTTON_LED
             digitalWrite(buttonLEDPin, HIGH);
-            delay(1000);
-            digitalWrite(buttonLEDPin, LOW);
-            delay(1000);
           #endif
+          digitalWrite(LED_BUILTIN, HIGH);
+          delay(3000);
+          #ifdef BUTTON_LED
+            digitalWrite(buttonLEDPin, LOW);
+          #endif
+          digitalWrite(LED_BUILTIN, LOW);
+          delay(3000);
         }
       }
     }
@@ -160,32 +168,39 @@ void setup()
     // Initialize Ethernet and UDP
     if (Ethernet.begin(mac) == 0)
     {
-      // Error handler - Ethernet does not initialize
+      // FATAL ERROR 02 - Ethernet doesn't connect
+      
       // generic error
       #ifdef DEBUG
-        Serial.println("FATAL error; Failed to configure Ethernet using DHCP");
+        Serial.println("FATAL ERROR 02; Failed to configure Ethernet using DHCP");
       #endif
+
+      // identified errors
       if (Ethernet.hardwareStatus() == EthernetNoHardware)
       {
         #ifdef DEBUG
-          Serial.println("Ethernet hardware not found");
+          Serial.println("FATAL ERROR 02; Ethernet hardware not found");
         #endif
       } 
       else if (Ethernet.linkStatus() == LinkOFF) 
       {
         #ifdef DEBUG
-          Serial.println("Ethernet cable is not connected");
+          Serial.println("FATAL ERROR 02; Ethernet cable is not connected");
         #endif
       }
       while (1)
       {
-        // endless loop communicating fatal error
+        // endless loop communicating fatal error 02
         #ifdef BUTTON_LED
           digitalWrite(buttonLEDPin, HIGH);
-          delay(1000);
-          digitalWrite(buttonLEDPin, LOW);
-          delay(1000;)
         #endif
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(2000);
+        #ifdef BUTTON_LED
+          digitalWrite(buttonLEDPin, LOW);
+        #endif
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(2000);
       }
     }
     #ifdef DEBUG
@@ -202,6 +217,7 @@ void setup()
   #ifdef BUTTON_LED
     pinMode(buttonLEDPin, OUTPUT);
     digitalWrite(buttonLEDPin, LOW);
+    
     // visually validate correct wiring
     #ifdef DEBUG
       for (int i=0;i<9;i++)
@@ -421,22 +437,28 @@ void MQTT_connect()
     mqtt.disconnect();
     delay(tries*10000);
     tries++;
+
+    // FATAL ERROR 01 - Can not connect to MQTT broker
     if (tries == MAXTRIES)
     {
       #ifdef DEBUG
-        Serial.print("FATAL error; can not connect to MQTT broker after");
+        Serial.print("FATAL ERROR 01; can not connect to MQTT broker after");
         Serial.print(MAXTRIES);
         Serial.println(" attempts");
       #endif
       while (1)
       {
-        // endless loop communicating fatal error
+        // endless loop communicating fatal error 01
         #ifdef BUTTON_LED
           digitalWrite(buttonLEDPin, HIGH);
-          delay(1000);
-          digitalWrite(buttonLEDPin, LOW);
-          delay(1000);
         #endif
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(1000);
+        #ifdef BUTTON_LED
+          digitalWrite(buttonLEDPin, LOW);
+        #endif
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(1000);
       }
     }
   }
