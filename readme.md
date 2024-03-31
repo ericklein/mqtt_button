@@ -26,6 +26,10 @@ First user alerts the second user to come2bed via status-light, and the second u
 	- ERR 01: Can not connect to MQTT broker. Device must be restarted.
 	- ERR 02: Can not connect to Ethernet. Device must be restarted.
 	- ERR 03: Can not connect to WiFi. Device must be restarted.
+- CAUTION - NOT IMPLEMENTED, see FR request
+	- throws a DEBUG message
+	- blinks built-in LED at (error code x 1 second) intervals
+	- ERR 04: MQTT publish failed.
 
 ### Information Sources
 
@@ -43,6 +47,7 @@ First user alerts the second user to come2bed via status-light, and the second u
 - [P3]111020: publish to multiple MQTT brokers
 - [P2]111120: ThinkSpeak investigation
 - [P3]120620: Error messages to MQTT broker
+- [P1]012421: Async blinking of built-in LED for non-FATAL errors (e.g. MQTT publish)
 
 ### Questions
 
